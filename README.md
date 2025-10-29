@@ -214,3 +214,106 @@ HAVING COUNT(hd) >= 2;
 ```
 
 ```
+Задание 128
+```
+WITH AllData AS (
+    SELECT 
+        point, date, SUM(out) AS total_out, 'multiple' AS type
+    FROM Outcome 
+    GROUP BY point, date
+    UNION ALL
+    SELECT 
+        point, date, out AS total_out, 'once' AS type
+    FROM Outcome_o
+),
+PointsWithBothTypes AS (
+    SELECT point
+    FROM AllData
+    GROUP BY point
+    HAVING COUNT(DISTINCT type) = 2
+),
+Comparison AS (
+    SELECT 
+        a.point,
+        a.date,
+        SUM(CASE WHEN a.type = 'once' THEN a.total_out ELSE 0 END) AS once_total,
+        SUM(CASE WHEN a.type = 'multiple' THEN a.total_out ELSE 0 END) AS multiple_total
+    FROM AllData a
+    WHERE a.point IN (SELECT point FROM PointsWithBothTypes)
+    GROUP BY a.point, a.date
+)
+SELECT 
+    point,
+    date,
+    CASE 
+        WHEN once_total > multiple_total THEN 'once a day'
+        WHEN multiple_total > once_total THEN 'more than once a day'
+        ELSE 'both'
+    END AS leader
+FROM Comparison
+WHERE once_total > 0 OR multiple_total > 0
+ORDER BY point, date
+```
+Задание 129
+```
+WITH AllIDs AS (
+    SELECT Q_ID FROM utQ
+),
+SortedIDs AS (
+    SELECT Q_ID, 
+           LAG(Q_ID) OVER (ORDER BY Q_ID) as prev_id,
+           LEAD(Q_ID) OVER (ORDER BY Q_ID) as next_id
+    FROM AllIDs
+),
+Gaps AS (
+    -- Пропуски после предыдущего ID
+    SELECT prev_id + 1 as gap_start, Q_ID - 1 as gap_end
+    FROM SortedIDs
+    WHERE prev_id IS NOT NULL AND Q_ID > prev_id + 1
+    
+    UNION ALL
+    
+    -- Пропуски перед следующим ID  
+    SELECT Q_ID + 1 as gap_start, next_id - 1 as gap_end
+    FROM SortedIDs
+    WHERE next_id IS NOT NULL AND next_id > Q_ID + 1
+),
+AllMissingIDs AS (
+    SELECT gap_start as missing_id FROM Gaps WHERE gap_start <= gap_end
+    UNION ALL
+    SELECT gap_end FROM Gaps WHERE gap_start < gap_end
+)
+SELECT 
+    MIN(missing_id) as min_missing,
+    MAX(missing_id) as max_missing
+FROM AllMissingIDs
+```
+
+Задание 130
+```
+WITH NumberedBattles AS (
+    SELECT 
+        ROW_NUMBER() OVER (ORDER BY date, name) as rn,
+        name,
+        date
+    FROM Battles
+),
+TotalCount AS (
+    SELECT COUNT(*) as total FROM Battles
+),
+FirstColCount AS (
+    SELECT CEILING(total / 2.0) as cnt FROM TotalCount
+)
+SELECT 
+    CASE WHEN a.rn <= fc.cnt THEN a.rn END as num1,
+    CASE WHEN a.rn <= fc.cnt THEN a.name END as name1,
+    CASE WHEN a.rn <= fc.cnt THEN a.date END as date1,
+    b.rn as num2,
+    b.name as name2,
+    b.date as date2
+FROM NumberedBattles a
+CROSS JOIN (SELECT cnt FROM FirstColCount) fc
+LEFT JOIN NumberedBattles b ON b.rn = a.rn + fc.cnt
+WHERE a.rn <= fc.cnt
+ORDER BY a.rn
+```
